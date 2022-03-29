@@ -1,20 +1,16 @@
 from typing import List
-from ..parser.ast import AST, Node
+from ..parser.ast import Node
 from ..scanner.tokens import Tokens
 from ..semantic import COMPUTATION_NODES, CONSTANT_NODES
 
 
 class CodeGenerator:
-    
-    def __init__(self, ast: AST):
-        self.ast = ast
-        self.generated = list()
 
     def visit_assignment(self, node: Node) -> None:
         
         self.codegen(node.right())
         self.emit("s")
-        self.emit(f"{node.left().value}")  # emit ID
+        self.emit(f"{node.left().value}")
         self.emit("0 k")
 
     def visit_computation(self, node: Node) -> None:
@@ -29,15 +25,14 @@ class CodeGenerator:
         self.emit(node.value)
 
     def visit_print(self, node: Node) -> None:
-
+        
         self.emit("l")
         self.emit(node.value)
         self.emit("p")
         self.emit("si")
 
     def visit_convert(self, node: Node) -> None:
-        am node: the convert node to visit and emit dc code for
-
+        
         self.emit(node.child().value)
         self.emit("5 k")
 

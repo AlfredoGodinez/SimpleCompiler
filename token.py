@@ -3,10 +3,7 @@ from typing import Optional, Union
 
 
 class Tokens(Enum):
-    """
-    The various terminal values that comprise the ac language, mapped to the
-    regex pattern that identifies them.
-    """
+    
     FLOATDCL = "f"
     INTDCL = "i"
     PRINT = "p"
@@ -21,12 +18,8 @@ class Tokens(Enum):
     NONE = ""
     CONVERT = "CV"
 
-
 class Token:
-    """
-    A common token for the ac language, consisting of a type (see Tokens) and a value
-    where appropriate (e.g. integer value for an INUM token).
-    """
+    
     def __init__(self, type_: Tokens, value: Optional[Union[int, float, str]] = None):
         self.type = type_
         self.value = value

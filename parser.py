@@ -1,120 +1,148 @@
-from __future__ import annotations
-from typing import List, Union, Optional
-from ..scanner import Tokens
+from typing import List, Optional
+from ..scanner import Token, Tokens
+from ..util import SyntaxParsingError
+from .ast import Node
 
 
-class Node:
-    """
-    A node for populating an AST.
-    """
+class Parser:
 
-    def __init__(self, parent: Optional[Node],
-                 type_: Optional[Tokens] = None,
-                 value: Optional[Union[str, float, int]] = None):
-        self.parent = parent
-        self.children = list()
-        self.type = type_
-        self.value = value
-        self.datatype = None
+    def __init__(self, tokens: List[Token]):
+        self.tokens = tokens
+        self.index = 0
+        self.length = len(tokens)
+        self.ast = None
 
-    def add_child(self,
-                  type_: Optional[Tokens] = None,
-                  value: Optional[Union[str, float, int]] = None) -> Node:
-        """
-        Adds a child by taking a type and value and constructing a new node before adding that new
-        node to the children of the current node.
-        :param type_: the Tokens type of the new Node
-        :param value:
-        :return: the newly added child node
-        """
-        child = Node(self, type_, value)
-        self.children.append(child)
-        return child
+    def peek(self) -> Optional[Token]:
 
-    def add_child_node(self, node: Node) -> None:
-        """
-        Adds a pre-prepared node as a child of the current node.
-        :param node: the node object to add to self.children
-        """
-        node.parent = self
-        self.children.append(node)
-
-    def get_children(self) -> List[Node]:
-        """
-        Convenience function for accessing the top-level children of the node.
-        :return: the list of children of self
-        """
-        return self.children
-
-    def get(self, index: int) -> Node:
-        """
-        Gets the child node indicated by index
-        :param index: the index of the child node to get
-        :return: the child node instance at the specified index
-        """
-        if index < len(self.children):
-            return self.children[index]
+        if self.index < self.length:
+            return self.tokens[self.index]
         else:
-            raise IndexError(f"Index {index} not available in {len(self.children)} "
-                             f"children")
+            return None
 
-    def left(self) -> Node:
-        """
-        Returns the left (first) child of a node with two children.
-        N.B. Will error if the given node does not have two children exactly.
-        :return: the left child node
-        """
-        if len(self.children) == 2:
-            return self.children[0]
+    def advance(self) -> Optional[Token]:
+        
+        if self.index < self.length:
+            token = self.tokens[self.index]
+            self.index += 1
+            return token
         else:
-            raise IndexError(f"Could not get left with {len(self.children)} children")
+            return None
 
-    def right(self) -> Node:
-        """
-        Returns the right (second) child of a node with two children.
-        N.B. Will error if the given node does not have two children exactly.
-        :return: the right child node
-        """
-        if len(self.children) == 2:
-            return self.children[1]
+    def parse(self):
+        
+        self.parse_program()
+
+    def expect(self, expected: Tokens) -> Token:
+
+        token = self.advance()
+        if token.type == expected:
+            return token
         else:
-            raise IndexError(f"Could not get left with {len(self.children)} children")
+            raise SyntaxParsingError(expected, token)
 
-    def child(self) -> Node:
-        """
-        Returns the only child of a node with two children.
-        N.B. Will error if the given node does not have one child exactly.
-        :return: the only child node
-        """
-        if len(self.children) == 1:
-            return self.children[0]
+    def parse_program(self):
+        
+
+        expected = [Tokens.FLOATDCL, Tokens.INTDCL, Tokens.ID, Tokens.PRINT,
+                    Tokens.END]
+        if self.peek().type in expected:
+            self.parse_declarations()
+            self.parse_statements()
+            self.expect(Tokens.END)
         else:
-            raise IndexError(f"Could not get child with {len(self.children)} children")
+            raise SyntaxParsingError(expected, self.peek())
 
-    def __repr__(self) -> str:
-        if self.children:
-            children = " - " + ", ".join([str(child.type) for child in self.children])
+    def parse_declarations(self):
+        
+        expected_declarations = [Tokens.FLOATDCL, Tokens.INTDCL]
+        expected_lambdas = [Tokens.ID, Tokens.PRINT, Tokens.END]
+        union_expected = expected_declarations + expected_lambdas
+
+        if self.peek().type not in union_expected:
+            raise SyntaxParsingError(union_expected, self.peek())
+
+        if self.peek().type in expected_declarations:
+            self.parse_declaration()
+            self.parse_declarations()
+        elif self.peek().type in expected_lambdas:
+            pass
+
+    def parse_declaration(self):
+        
+        if self.peek().type == Tokens.FLOATDCL:
+            declaration = self.expect(Tokens.FLOATDCL)
+            id_ = self.expect(Tokens.ID)
+        elif self.peek().type == Tokens.INTDCL:
+            declaration = self.expect(Tokens.INTDCL)
+            id_ = self.expect(Tokens.ID)
         else:
-            children = ""
+            raise SyntaxParsingError([Tokens.FLOATDCL, Tokens.INTDCL],
+                                     self.peek())
+        self.ast.root.add_child(declaration.type, id_)
 
-        type_ = self.type if self.type else Tokens.NONE
-        return f"<Node {type_}{children}>"
+    def parse_statements(self):
+        
+        if self.peek().type in [Tokens.ID, Tokens.PRINT]:
+            self.parse_statement()
+            self.parse_statements()
+        elif self.peek().type == Tokens.END:
+            pass
+        else:
+            raise SyntaxParsingError([Tokens.ID, Tokens.PRINT, Tokens.END],
+                                     self.peek())
 
-    def __str__(self) -> str:
-        return str(self.__repr__())
+    def parse_statement(self) -> Optional[Node]:
+        
+        if self.peek().type == Tokens.ID:
+            id_ = self.expect(Tokens.ID)
+            assign = self.expect(Tokens.ASSIGN)
+            value = self.parse_value()
+            statement = self.ast.root.add_child(assign.type)
+            statement.add_child(id_.type, id_.value)
 
+            expression = self.parse_expression(statement, value)
+            if expression:
+                pass 
+            else:
+                statement.add_child(value.type, value.value)
+            return statement
+        elif self.peek().type == Tokens.PRINT:
+            print_ = self.expect(Tokens.PRINT)
+            id_ = self.expect(Tokens.ID)
+            return self.ast.root.add_child(print_.type, id_.value)
+        else:
+            raise SyntaxParsingError
 
-class AST:
-    """
-    An Abstract Syntax Tree (of Nodes)
-    """
-    def __init__(self):
-        self.root = Node(None)
-        self.children = self.root.children
+    def parse_value(self):
 
-    def children(self) -> List[Node]:
-        """
-        Convenience function for accessing the top-level children of the node.
-        :return: the list of children of the root node
-        """
-        return self.children
+        if self.peek().type == Tokens.ID:
+            value = self.expect(Tokens.ID)
+        elif self.peek().type == Tokens.INUM:
+            value = self.expect(Tokens.INUM)
+        elif self.peek().type == Tokens.FNUM:
+            value = self.expect(Tokens.FNUM)
+        else:
+            raise SyntaxParsingError([Tokens.ID, Tokens.FNUM, Tokens.INUM],
+                                     self.peek())
+        return value
+
+    def parse_expression(self, node: Optional[Node] = None,
+                         value: Optional[Token] = None):
+
+        if self.peek().type == Tokens.PLUS:
+            token = self.expect(Tokens.PLUS).type
+        elif self.peek().type == Tokens.MINUS:
+            token = self.expect(Tokens.MINUS).type
+        elif self.peek().type in [Tokens.ID, Tokens.PRINT, Tokens.END]:
+            return
+        else:
+            raise SyntaxParsingError([Tokens.PLUS, Tokens.MINUS, Tokens.ID,
+                                      Tokens.PRINT, Tokens.END],
+                                     self.peek())
+        operation = self.ast.root.add_child(token) if not node \
+            else node.add_child(token)
+        operation.add_child(value.type, value.value)
+        value = self.parse_value()
+        node = operation.add_child(value.type, value.value)
+        self.parse_expression(node)
+        return operation
